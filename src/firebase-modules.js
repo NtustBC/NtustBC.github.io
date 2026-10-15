@@ -14,6 +14,7 @@ import {
   setPersistence,
   signInWithEmailAndPassword,
   signOut,
+  updatePassword,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
   collection,
@@ -66,6 +67,7 @@ export {
   signOut,
   Timestamp,
   updateDoc,
+  updatePassword,
   where,
   writeBatch,
 };

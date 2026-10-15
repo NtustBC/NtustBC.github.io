@@ -113,8 +113,115 @@ async function releaseMembershipRegistrationSlot(firestore, member = {}) {
   });
 }
 
-exports.requestVerifiedPasswordReset = onCall(CALLABLE_OPTIONS, async () => {
-  throw new HttpsError("failed-precondition", "目前未啟用自動密碼重設，請聯絡社團幹部協助處理。");
+exports.requestVerifiedPasswordReset = onCall(CALLABLE_OPTIONS, async (request) => {
+  const email = normalizedEmail(request.data?.email);
+  if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpsError("invalid-argument", "請輸入有效的註冊電子郵件。");
+  }
+
+  const firestore = admin.firestore();
+  const emailHash = crypto.createHash("sha256").update(email).digest("hex");
+  const rateLimitRef = firestore.collection("passwordResetRateLimits").doc(emailHash);
+  const now = admin.firestore.Timestamp.now();
+  const shouldContinue = await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(rateLimitRef);
+    const lastRequestedAt = snapshot.data()?.lastRequestedAt;
+    if (lastRequestedAt && now.toMillis() - lastRequestedAt.toMillis() < 10 * 60 * 1000) {
+      return false;
+    }
+    transaction.set(rateLimitRef, {
+      emailHash,
+      lastRequestedAt: now,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return true;
+  });
+  if (!shouldContinue) return { ok: true };
+
+  let targetUser;
+  try {
+    targetUser = await admin.auth().getUserByEmail(email);
+  } catch (error) {
+    if (error?.code === "auth/user-not-found") return { ok: true };
+    logger.error("Password reset account lookup failed.", { emailHash, error: error?.message || String(error) });
+    throw new HttpsError("internal", "目前無法送出密碼重設申請，請稍後再試。");
+  }
+
+  const memberSnapshot = await firestore.collection("members").doc(targetUser.uid).get();
+  const member = memberSnapshot.exists ? memberSnapshot.data() : {};
+  const name = String(member.displayName || member.name || "未提供姓名").trim().slice(0, 100) || "未提供姓名";
+  const requestRef = firestore.collection("passwordResetRequests").doc(targetUser.uid);
+  const notificationRef = firestore.collection("adminNotifications").doc(`password-reset-${targetUser.uid}`);
+  const batch = firestore.batch();
+  batch.set(requestRef, {
+    userId: targetUser.uid,
+    email,
+    name,
+    status: "pending",
+    requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  batch.set(notificationRef, {
+    type: "password_reset_requested",
+    title: "使用者申請重設密碼",
+    message: `${name}（${email}）忘記密碼，請先核對身分，再到社員管理頁設定新密碼。`,
+    userId: targetUser.uid,
+    email,
+    name,
+    requestId: targetUser.uid,
+    status: "pending",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await batch.commit();
+  logger.info("Password reset request created for administrator review.", { uid: targetUser.uid, emailHash });
+  return { ok: true };
+});
+
+exports.adminResetMemberPassword = onCall(CALLABLE_OPTIONS, async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "請先登入管理員帳號。");
+  const firestore = admin.firestore();
+  const callerAdminSnapshot = await firestore.collection("admins").doc(callerUid).get();
+  if (!callerAdminSnapshot.exists) throw new HttpsError("permission-denied", "只有管理員可以重設密碼。");
+
+  const uid = String(request.data?.uid || "").trim();
+  const newPassword = String(request.data?.newPassword || "");
+  if (!uid) throw new HttpsError("invalid-argument", "缺少要重設的帳號。");
+  if (newPassword.length < 8 || newPassword.length > 128) {
+    throw new HttpsError("invalid-argument", "新密碼需為 8 至 128 個字元。");
+  }
+
+  let targetUser;
+  try {
+    targetUser = await admin.auth().getUser(uid);
+    await admin.auth().updateUser(uid, { password: newPassword });
+  } catch (error) {
+    logger.error("Administrator password reset failed.", { callerUid, uid, error: error?.message || String(error) });
+    if (error?.code === "auth/user-not-found") throw new HttpsError("not-found", "找不到這個登入帳號。");
+    throw new HttpsError("internal", "密碼更新失敗，請稍後再試。");
+  }
+
+  const email = normalizedEmail(targetUser.email);
+  const batch = firestore.batch();
+  batch.set(firestore.collection("passwordResetRequests").doc(uid), {
+    status: "completed",
+    completedAt: admin.firestore.FieldValue.serverTimestamp(),
+    completedBy: callerUid,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  batch.delete(firestore.collection("adminNotifications").doc(`password-reset-${uid}`));
+  batch.set(firestore.collection("memberNotifications").doc(`password-reset-completed-${uid}`), {
+    type: "password_reset_completed",
+    category: "registrationUpdates",
+    title: "密碼已由管理員重設",
+    message: "管理員已協助設定新密碼。登入後請到帳號設定改成只有自己知道的密碼。",
+    userId: uid,
+    email,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await batch.commit();
+  logger.info("Member password reset by administrator.", { callerUid, uid });
+  return { ok: true, uid, email };
 });
 exports.deleteMemberAccount = onCall(CALLABLE_OPTIONS, async (request) => {
   const callerUid = request.auth?.uid;

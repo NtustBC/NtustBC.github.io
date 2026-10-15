@@ -1848,6 +1848,23 @@ h1.page-title {
   gap: 10px;
 }
 
+.member-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 190px;
+}
+
+.member-password-reset-button {
+  min-height: 38px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.account-password-section .account-membership-actions {
+  justify-content: flex-start;
+}
+
 .member-payment-cell {
   min-width: 230px;
   flex-direction: column;
