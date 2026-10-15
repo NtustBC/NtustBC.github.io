@@ -4,7 +4,7 @@
 
 ## 網站連結
 
-[前往臺科大羽球社網站](https://ntustbc.github.io/Ntust_Badminton_Club/)
+[前往臺科大羽球社網站](https://ntustbc.github.io/)
 
 ## 網站功能
 
