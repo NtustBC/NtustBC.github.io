@@ -13,6 +13,7 @@ let EmailAuthProvider;
 let getAuth;
 let onAuthStateChanged;
 let reauthenticateWithCredential;
+let sendPasswordResetEmail;
 let signInWithEmailAndPassword;
 let signOut;
 let updatePassword;
@@ -56,6 +57,7 @@ const ensureFirebaseModules = async () => {
         getAuth,
         onAuthStateChanged,
         reauthenticateWithCredential,
+        sendPasswordResetEmail,
         signInWithEmailAndPassword,
         signOut,
         updatePassword,
@@ -658,7 +660,7 @@ const passwordResetModalMarkup = `
       <div class="modal-header">
         <div>
           <h2 class="modal-title">忘記密碼</h2>
-          <p class="modal-subtitle">輸入註冊信箱送出申請，不會寄送電子郵件。管理員人工審核同意後，才會協助更新密碼。</p>
+          <p class="modal-subtitle">輸入註冊信箱，我們會寄送密碼重設連結，請依信中指示設定新密碼。</p>
         </div>
         <button class="modal-close" data-close-password-reset type="button" aria-label="關閉忘記密碼視窗">
           <span aria-hidden="true">+</span>
@@ -670,11 +672,11 @@ const passwordResetModalMarkup = `
             <label for="reset-email">註冊電子郵件</label>
             <input id="reset-email" name="email" type="email" autocomplete="email" placeholder="your@email.com" required />
           </div>
-          <p class="login-note" data-password-reset-hint>送出後，管理員會在網站通知中心收到申請。</p>
+          <p class="login-note" data-password-reset-hint>請至註冊信箱收取重設郵件，也請檢查垃圾郵件匣。</p>
         </div>
         <div class="modal-footer">
           <button class="button-secondary" data-close-password-reset type="button">取消</button>
-          <button class="login-button modal-submit" data-password-reset-submit type="submit">送出重設申請</button>
+          <button class="login-button modal-submit" data-password-reset-submit type="submit">寄送重設連結</button>
         </div>
       </form>
     </div>
@@ -687,8 +689,8 @@ const adminPasswordResetModalMarkup = `
     <div class="modal-dialog auth-modal-dialog">
       <div class="modal-header">
         <div>
-          <h2 class="modal-title">管理員設定新密碼</h2>
-          <p class="modal-subtitle" data-admin-password-reset-target>請先核對使用者身分，再設定暫時密碼。</p>
+          <h2 class="modal-title">寄送密碼重設連結</h2>
+          <p class="modal-subtitle" data-admin-password-reset-target>請確認註冊信箱，再寄送密碼重設連結。</p>
         </div>
         <button class="modal-close" data-close-admin-password-reset type="button" aria-label="關閉設定密碼視窗"><span aria-hidden="true">+</span></button>
       </div>
@@ -696,15 +698,12 @@ const adminPasswordResetModalMarkup = `
         <input name="uid" type="hidden" />
         <input name="email" type="hidden" />
         <div class="modal-body form-grid">
-          <div class="form-field"><label for="admin-new-password">新密碼</label><input id="admin-new-password" name="newPassword" minlength="8" maxlength="128" type="password" autocomplete="new-password" placeholder="8 至 128 個字元" required /></div>
-          <div class="form-field"><label for="admin-confirm-password">確認新密碼</label><input id="admin-confirm-password" name="newPasswordConfirm" minlength="8" maxlength="128" type="password" autocomplete="new-password" placeholder="再次輸入新密碼" required /></div>
-          <p class="login-note">請以安全方式將暫時密碼告知本人，並提醒對方登入後立即在帳號設定更換。</p>
-          <label><input name="identityVerified" type="checkbox" required /> 我已核對本人身分，同意更新此帳號密碼</label>
+          <p class="login-note">重設連結將寄到此帳號的註冊信箱，由本人開啟連結設定新密碼。</p>
           <p class="login-note" data-admin-password-reset-hint></p>
         </div>
         <div class="modal-footer">
           <button class="button-secondary" data-close-admin-password-reset type="button">取消</button>
-          <button class="login-button modal-submit" data-admin-password-reset-submit type="submit">同意並更新密碼</button>
+          <button class="login-button modal-submit" data-admin-password-reset-submit type="submit">寄送重設連結</button>
         </div>
       </form>
     </div>
@@ -1759,7 +1758,7 @@ const openNotificationCenter = async () => {
           <span class="notification-expand-label">查看</span>
         </summary>
         <button class="notification-delete-button" data-dismiss-notification type="button" aria-label="刪除「${escapeHtml(item.title)}」通知">×</button>
-        <div class="notification-detail"><p>${escapeHtml(copy)}</p>${item.passwordResetUserId && currentUserIsAdmin ? `<button class="button-secondary" data-review-password-reset data-member-id="${escapeHtml(item.passwordResetUserId)}" data-member-email="${escapeHtml(item.passwordResetEmail)}" type="button">審核並設定密碼</button>` : ""}</div>
+        <div class="notification-detail"><p>${escapeHtml(copy)}</p>${item.passwordResetUserId && currentUserIsAdmin ? `<button class="button-secondary" data-review-password-reset data-member-id="${escapeHtml(item.passwordResetUserId)}" data-member-email="${escapeHtml(item.passwordResetEmail)}" type="button">寄送重設連結</button>` : ""}</div>
       </details>`;
     }).join("") : `<article class="notification-empty"><h3>目前沒有通知</h3><p>新公告與報名狀態會顯示在這裡。</p></article>`;
     clearLoadingState(list);
@@ -2758,7 +2757,7 @@ const openPasswordResetModal = () => {
   const enteredEmail = String(loginEmailInput?.value || "").trim();
   form.reset();
   if (emailInput) emailInput.value = enteredEmail;
-  setPasswordResetHint("送出後，管理員會在網站通知中心收到申請。");
+  setPasswordResetHint("請至註冊信箱收取重設郵件，也請檢查垃圾郵件匣。");
   loginModal.hidden = true;
   resetModal.hidden = false;
   body.classList.add("modal-open");
@@ -2771,6 +2770,26 @@ const closePasswordResetModal = () => {
   body.classList.remove("modal-open");
 };
 
+const PASSWORD_RESET_SUCCESS_MESSAGE = "若此信箱已註冊，將收到密碼重設郵件。請依信中連結設定新密碼，並檢查垃圾郵件匣。";
+
+const getPasswordResetError = (error) => ({
+  "auth/invalid-email": "請輸入有效的註冊電子郵件。",
+  "auth/too-many-requests": "寄送過於頻繁，請稍後再試。",
+  "auth/network-request-failed": "無法連線至密碼重設服務，請檢查網路後再試。",
+}[error?.code] || "目前無法寄送密碼重設郵件，請稍後再試；若持續發生，請聯絡社團幹部。");
+
+const sendAccountPasswordReset = async (email) => {
+  await ensureAuthReady();
+  if (!auth || !sendPasswordResetEmail) throw new Error("密碼重設服務目前無法使用。");
+  auth.languageCode = "zh-TW";
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (error) {
+    // Keep the response identical for unregistered addresses.
+    if (error?.code !== "auth/user-not-found") throw error;
+  }
+};
+
 const handlePasswordResetSubmit = async (event) => {
   event.preventDefault();
   const { emailInput, submitButton } = getPasswordResetModalElements();
@@ -2780,20 +2799,12 @@ const handlePasswordResetSubmit = async (event) => {
     emailInput?.focus();
     return;
   }
-
-  setButtonLoading(submitButton, true, "送出中…");
+  setButtonLoading(submitButton, true, "寄送中…");
   try {
-    await ensureAuthReady();
-    if (!functionsClient || !httpsCallable) throw new Error("密碼重設服務目前無法使用。");
-    await httpsCallable(functionsClient, "requestVerifiedPasswordReset")({ email });
-    setPasswordResetHint("申請已送出，不會寄送電子郵件。若資料相符，管理員會收到通知，人工審核同意後協助更新密碼。", "success");
+    await sendAccountPasswordReset(email);
+    setPasswordResetHint(PASSWORD_RESET_SUCCESS_MESSAGE, "success");
   } catch (error) {
-    const code = String(error?.code || "");
-    if (code.includes("resource-exhausted")) {
-      setPasswordResetHint("申請已送出，請勿重複送出；若仍無法登入，請直接聯絡社團幹部。", "success");
-    } else {
-      setPasswordResetHint(getFriendlyAuthError(error), "error");
-    }
+    setPasswordResetHint(getPasswordResetError(error), "error");
   } finally {
     setButtonLoading(submitButton, false);
   }
@@ -2818,11 +2829,11 @@ const openAdminPasswordResetModal = (memberId, email) => {
   form.reset();
   form.elements.namedItem("uid").value = memberId;
   form.elements.namedItem("email").value = email;
-  target.textContent = `帳號：${email || memberId}。請先核對本人身分，再設定暫時密碼。`;
+  target.textContent = `帳號：${email || memberId}。重設連結將寄至此信箱。`;
   setMessageTone(hint, "", "default");
   modal.hidden = false;
   body.classList.add("modal-open");
-  window.setTimeout(() => form.elements.namedItem("newPassword")?.focus(), 50);
+  window.setTimeout(() => form.querySelector("[data-admin-password-reset-submit]")?.focus(), 50);
 };
 
 const closeAdminPasswordResetModal = () => {
@@ -2834,41 +2845,17 @@ const closeAdminPasswordResetModal = () => {
 const handleAdminPasswordResetSubmit = async (event) => {
   event.preventDefault();
   const { form, hint, submitButton } = getAdminPasswordResetModalElements();
-  const values = Object.fromEntries(new FormData(form));
-  const uid = String(values.uid || "").trim();
-  const email = String(values.email || "").trim();
-  const newPassword = String(values.newPassword || "");
-  const confirmation = String(values.newPasswordConfirm || "");
-  if (!currentUserIsAdmin || !uid) {
-    setMessageTone(hint, "只有管理員可以設定密碼。", "error");
+  const email = String(form.elements.namedItem("email").value || "").trim().toLowerCase();
+  if (!currentUserIsAdmin || !email) {
+    setMessageTone(hint, "請確認管理員登入狀態與社員註冊信箱。", "error");
     return;
   }
-  if (values.identityVerified !== "on") {
-    setMessageTone(hint, "請先核對本人身分，並勾選同意更新密碼。", "error");
-    return;
-  }
-  if (newPassword.length < 8 || newPassword.length > 128) {
-    setMessageTone(hint, "新密碼需為 8 至 128 個字元。", "error");
-    form.elements.namedItem("newPassword")?.focus();
-    return;
-  }
-  if (newPassword !== confirmation) {
-    setMessageTone(hint, "兩次輸入的新密碼不一致。", "error");
-    form.elements.namedItem("newPasswordConfirm")?.focus();
-    return;
-  }
-
-  setButtonLoading(submitButton, true, "設定中…");
+  setButtonLoading(submitButton, true, "寄送中…");
   try {
-    await ensureAuthReady();
-    if (!functionsClient || !httpsCallable) throw new Error("密碼重設服務目前無法使用。");
-    await httpsCallable(functionsClient, "adminResetMemberPassword")({ uid, newPassword, identityVerified: true });
-    closeAdminPasswordResetModal();
-    showToast(`${email || "這個帳號"} 的密碼已重新設定。`, { tone: "success", title: "密碼已更新" });
-    await syncNotificationIndicator({ refreshProfile: true });
+    await sendAccountPasswordReset(email);
+    setMessageTone(hint, PASSWORD_RESET_SUCCESS_MESSAGE, "success");
   } catch (error) {
-    const message = error?.details?.message || error?.message || "密碼設定失敗，請稍後再試。";
-    setMessageTone(hint, message, "error");
+    setMessageTone(hint, getPasswordResetError(error), "error");
   } finally {
     setButtonLoading(submitButton, false);
   }
@@ -4794,7 +4781,7 @@ const getRosterManagementRowMarkup = (member = {}, index = 0, { disableStatus = 
       </td>
       <td>
         <div class="member-row-actions">
-          <button class="button-secondary member-password-reset-button" data-member-password-reset data-member-id="${escapeHtml(memberId)}" data-member-email="${escapeHtml(email)}" type="button"${controlsDisabled ? ' disabled title="請從自己的帳號設定變更密碼"' : ""}>設定密碼</button>
+          <button class="button-secondary member-password-reset-button" data-member-password-reset data-member-id="${escapeHtml(memberId)}" data-member-email="${escapeHtml(email)}" type="button"${controlsDisabled ? ' disabled title="請從自己的帳號設定變更密碼"' : ""}>寄送重設連結</button>
           <button class="member-delete-button" data-member-account-delete data-member-id="${escapeHtml(memberId)}" data-member-email="${escapeHtml(email)}" type="button"${controlsDisabled ? ' disabled title="不能刪除目前登入中的管理員帳號"' : ""}>刪除資料</button>
         </div>
       </td>
@@ -5345,7 +5332,7 @@ const renderMembersExportToolbar = (members = []) => {
           </td>
           <td>
             <div class="member-row-actions">
-              <button class="button-secondary member-password-reset-button" data-member-password-reset data-member-id="${escapeHtml(member.id)}" data-member-email="${escapeHtml((member.email || "").trim().toLowerCase())}" type="button" ${member.id === currentUser?.uid ? 'disabled title="請從自己的帳號設定變更密碼"' : ""}>設定密碼</button>
+              <button class="button-secondary member-password-reset-button" data-member-password-reset data-member-id="${escapeHtml(member.id)}" data-member-email="${escapeHtml((member.email || "").trim().toLowerCase())}" type="button" ${member.id === currentUser?.uid ? 'disabled title="請從自己的帳號設定變更密碼"' : ""}>寄送重設連結</button>
               <button
                 class="member-delete-button"
                 data-member-account-delete

@@ -1,6 +1,6 @@
 # Firebase 安全功能部署
 
-Firestore Rules 必須另外部署；只更新 GitHub Pages 靜態檔案不會套用後端權限修正。目前社員申請改用 Firestore Transaction，不依賴 Cloud Functions，可在 Firebase Spark 免費方案運作。目前所有系統寄信皆已停用。
+Firestore Rules 必須另外部署；只更新 GitHub Pages 靜態檔案不會套用後端權限修正。目前社員申請改用 Firestore Transaction，不依賴 Cloud Functions，可在 Firebase Spark 免費方案運作。忘記密碼使用 Firebase Authentication 內建重設郵件，不需要 Cloud Functions 或第三方寄信服務。
 
 ## Spark 方案部署步驟
 
@@ -38,7 +38,8 @@ Firestore Rules 必須另外部署；只更新 GitHub Pages 靜態檔案不會�
 - 未登入訪客不得新增 `faqQuestions`；登入後可以送出問題。
 - 建立一場上限 1 人的社課，兩個帳號同時報名時只能有一筆成功。
 - 未登入與一般社員都無法讀取 `classSessionSignups`、`classPublicRosters`、其他人的 `members` 資料。
-- 忘記密碼會送出管理員審核申請，不會寄信；送出後原密碼仍有效，只有管理員核對身分並同意更新後才變更密碼。
+- 忘記密碼會透過 Firebase Authentication 寄送重設連結；原密碼在本人開啟連結並完成重設前仍有效。管理員只能協助寄送連結，由信箱持有人設定新密碼。
+- 此次密碼重設修正只需重新發佈靜態網站，不需部署 Functions 或修改 Firestore Rules。可在 Authentication → Templates 調整重設郵件範本；寄送額度依 Firebase Spark 方案限制。
 
 ## 持續維護
 

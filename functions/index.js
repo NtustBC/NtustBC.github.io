@@ -123,21 +123,6 @@ exports.requestVerifiedPasswordReset = onCall(CALLABLE_OPTIONS, async (request) 
   const emailHash = crypto.createHash("sha256").update(email).digest("hex");
   const rateLimitRef = firestore.collection("passwordResetRateLimits").doc(emailHash);
   const now = admin.firestore.Timestamp.now();
-  const shouldContinue = await firestore.runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(rateLimitRef);
-    const lastRequestedAt = snapshot.data()?.lastRequestedAt;
-    if (lastRequestedAt && now.toMillis() - lastRequestedAt.toMillis() < 10 * 60 * 1000) {
-      return false;
-    }
-    transaction.set(rateLimitRef, {
-      emailHash,
-      lastRequestedAt: now,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-    return true;
-  });
-  if (!shouldContinue) return { ok: true };
-
   let targetUser;
   try {
     targetUser = await admin.auth().getUserByEmail(email);
@@ -152,27 +137,39 @@ exports.requestVerifiedPasswordReset = onCall(CALLABLE_OPTIONS, async (request) 
   const name = String(member.displayName || member.name || "未提供姓名").trim().slice(0, 100) || "未提供姓名";
   const requestRef = firestore.collection("passwordResetRequests").doc(targetUser.uid);
   const notificationRef = firestore.collection("adminNotifications").doc(`password-reset-${targetUser.uid}`);
-  const batch = firestore.batch();
-  batch.set(requestRef, {
-    userId: targetUser.uid,
-    email,
-    name,
-    status: "pending",
-    requestedAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
-  batch.set(notificationRef, {
-    type: "password_reset_requested",
-    title: "使用者申請重設密碼",
-    message: `${name}（${email}）忘記密碼，請先核對身分，再到社員管理頁設定新密碼。`,
-    userId: targetUser.uid,
-    email,
-    name,
-    requestId: targetUser.uid,
-    status: "pending",
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
-  await batch.commit();
+  const shouldContinue = await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(rateLimitRef);
+    const lastRequestedAt = snapshot.data()?.lastRequestedAt;
+    if (lastRequestedAt && now.toMillis() - lastRequestedAt.toMillis() < 10 * 60 * 1000) {
+      return false;
+    }
+    transaction.set(requestRef, {
+      userId: targetUser.uid,
+      email,
+      name,
+      status: "pending",
+      requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    transaction.set(notificationRef, {
+      type: "password_reset_requested",
+      title: "使用者申請重設密碼",
+      message: `${name}（${email}）忘記密碼，請先核對身分，再到社員管理頁設定新密碼。`,
+      userId: targetUser.uid,
+      email,
+      name,
+      requestId: targetUser.uid,
+      status: "pending",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    transaction.set(rateLimitRef, {
+      emailHash,
+      lastRequestedAt: now,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return true;
+  });
+  if (!shouldContinue) return { ok: true };
   logger.info("Password reset request created for administrator review.", { uid: targetUser.uid, emailHash });
   return { ok: true };
 });
