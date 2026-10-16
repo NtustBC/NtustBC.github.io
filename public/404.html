@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+    <title>頁面搬家了｜臺科大羽球社</title>
+    <script>
+      const legacyPrefix = "/Ntust_Badminton_Club"
+
+      if (
+        window.location.pathname === legacyPrefix ||
+        window.location.pathname.startsWith(`${legacyPrefix}/`)
+      ) {
+        const nextPath = window.location.pathname.slice(legacyPrefix.length) || "/"
+        window.location.replace(`${nextPath}${window.location.search}${window.location.hash}`)
+      }
+    </script>
+    <style>
+      :root {
+        color: #17324d;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        display: grid;
+        min-height: 100vh;
+        margin: 0;
+        place-items: center;
+        background: #f4f8fc;
+      }
+
+      main {
+        max-width: 32rem;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      img {
+        width: 7rem;
+        height: 7rem;
+      }
+
+      a {
+        display: inline-block;
+        margin-top: 1rem;
+        padding: 0.75rem 1.25rem;
+        border-radius: 999px;
+        color: #fff;
+        background: #07528a;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/favicon.png" alt="臺科大羽球社 Logo" />
+      <h1>找不到這個頁面</h1>
+      <p>網址可能已經更新，請回到臺科大羽球社首頁。</p>
+      <a href="/">前往首頁</a>
+    </main>
+  </body>
+</html>
