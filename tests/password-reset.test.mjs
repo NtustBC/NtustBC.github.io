@@ -7,33 +7,25 @@ const siteSource = readFileSync(new URL("../src/site.js", import.meta.url), "utf
 const firebaseModules = readFileSync(new URL("../src/firebase-modules.js", import.meta.url), "utf8");
 const functionsSource = readFileSync(new URL("../functions/index.js", import.meta.url), "utf8");
 
-test("password recovery uses built-in Authentication without Cloud Functions", () => {
-  assert.match(firebaseModules, /sendPasswordResetEmail/);
-  assert.match(siteSource, /await sendPasswordResetEmail\(auth, email\)/);
-  assert.doesNotMatch(siteSource, /httpsCallable\(functionsClient, "(?:requestVerifiedPasswordReset|adminResetMemberPassword)"\)/);
-  assert.doesNotMatch(siteSource, /不會寄送電子郵件|管理員人工審核同意後|admin-new-password/);
+test("manual recovery requires all four fields and never sends automatic reset email", () => {
+  for (const name of ["email", "name", "studentId", "phone"]) {
+    assert.match(siteSource, new RegExp(`name="${name}"[^>]*required`));
+  }
+  assert.doesNotMatch(siteSource, /sendPasswordResetEmail|sendAccountPasswordReset/);
+  assert.doesNotMatch(firebaseModules, /sendPasswordResetEmail/);
+  assert.match(siteSource, /尚未寄出申請/);
 });
 
-test("password reset hides missing accounts but propagates delivery failures", async () => {
-  const source = siteSource.slice(siteSource.indexOf("const sendAccountPasswordReset ="), siteSource.indexOf("const handlePasswordResetSubmit ="));
-  const calls = [];
-  let failure;
-  const context = {
-    auth: {}, ensureAuthReady: async () => {},
-    sendPasswordResetEmail: async (auth, email) => {
-      calls.push({ language: auth.languageCode, email });
-      if (failure) throw failure;
-    },
-  };
-  runInNewContext(source + "\nglobalThis.sendReset = sendAccountPasswordReset;", context);
-  await context.sendReset("member@example.com");
-  assert.deepEqual(calls[0], { language: "zh-TW", email: "member@example.com" });
-  failure = { code: "auth/user-not-found" };
-  await context.sendReset("missing@example.com");
-  for (const code of ["auth/too-many-requests", "auth/network-request-failed"]) {
-    failure = { code };
-    await assert.rejects(context.sendReset("member@example.com"), (error) => error.code === code);
-  }
+test("manual review email encodes identity details without injecting mail headers", () => {
+  const source = siteSource.slice(siteSource.indexOf("const buildManualPasswordResetEmail ="), siteSource.indexOf("const handlePasswordResetSubmit ="));
+  const context = {};
+  runInNewContext(source + "\nglobalThis.build = buildManualPasswordResetEmail;", context);
+  const details = { email: "member@example.com", name: "王小明 & ?bcc=bad@example.com", studentId: "B123", phone: "0912345678" };
+  const result = context.build(details);
+  const url = new URL(result.url);
+  assert.equal(url.pathname, "ntustbc@gmail.com");
+  assert.equal(url.searchParams.get("bcc"), null);
+  for (const value of Object.values(details)) assert.ok(url.searchParams.get("body").includes(value));
 });
 
 test("password reset requests notify administrators without revealing missing accounts", () => {

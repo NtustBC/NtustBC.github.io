@@ -1,6 +1,6 @@
 # Firebase 安全功能部署
 
-Firestore Rules 必須另外部署；只更新 GitHub Pages 靜態檔案不會套用後端權限修正。目前社員申請改用 Firestore Transaction，不依賴 Cloud Functions，可在 Firebase Spark 免費方案運作。忘記密碼使用 Firebase Authentication 內建重設郵件，不需要 Cloud Functions 或第三方寄信服務。
+Firestore Rules 必須另外部署；只更新 GitHub Pages 靜態檔案不會套用後端權限修正。目前社員申請改用 Firestore Transaction，不依賴 Cloud Functions，可在 Firebase Spark 免費方案運作。忘記密碼改由申請人寄信給社團，幹部人工核對後從 Firebase Console 處理，不需要 Cloud Functions。
 
 ## Spark 方案部署步驟
 
@@ -38,8 +38,11 @@ Firestore Rules 必須另外部署；只更新 GitHub Pages 靜態檔案不會�
 - 未登入訪客不得新增 `faqQuestions`；登入後可以送出問題。
 - 建立一場上限 1 人的社課，兩個帳號同時報名時只能有一筆成功。
 - 未登入與一般社員都無法讀取 `classSessionSignups`、`classPublicRosters`、其他人的 `members` 資料。
-- 忘記密碼會透過 Firebase Authentication 寄送重設連結；原密碼在本人開啟連結並完成重設前仍有效。管理員只能協助寄送連結，由信箱持有人設定新密碼。
-- 此次密碼重設修正只需重新發佈靜態網站，不需部署 Functions 或修改 Firestore Rules。可在 Authentication → Templates 調整重設郵件範本；寄送額度依 Firebase Spark 方案限制。
+- 忘記密碼需填註冊信箱、姓名、學號與電話；開啟申請郵件不代表已送出，申請人必須自行寄出。
+- 幹部收到申請後，在社員管理比對四項資料，必要時撥打原留電話確認本人，再進入 Firebase Console → Authentication → Users 處理對應帳號。
+- 不要將密碼或重設連結寄給申請人另行指定、但未核實的信箱；不要以申請資料本身當作已驗證證據。
+- 網站移除自助重設入口，但 Firebase 原生公開寄信 API 仍可能被直接呼叫；前端人工審核流程不是 Firebase 強制的重設前置條件。若要求技術上強制每次重設皆經審核，需另設可信任後端與身分驗證架構，不能只靠靜態網站達成。
+- 本次只需發佈靜態網站，不需部署 Functions 或修改 Firestore Rules。
 
 ## 持續維護
 

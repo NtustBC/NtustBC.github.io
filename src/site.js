@@ -13,7 +13,6 @@ let EmailAuthProvider;
 let getAuth;
 let onAuthStateChanged;
 let reauthenticateWithCredential;
-let sendPasswordResetEmail;
 let signInWithEmailAndPassword;
 let signOut;
 let updatePassword;
@@ -57,7 +56,6 @@ const ensureFirebaseModules = async () => {
         getAuth,
         onAuthStateChanged,
         reauthenticateWithCredential,
-        sendPasswordResetEmail,
         signInWithEmailAndPassword,
         signOut,
         updatePassword,
@@ -660,7 +658,7 @@ const passwordResetModalMarkup = `
       <div class="modal-header">
         <div>
           <h2 class="modal-title">忘記密碼</h2>
-          <p class="modal-subtitle">輸入註冊信箱，我們會寄送密碼重設連結，請依信中指示設定新密碼。</p>
+          <p class="modal-subtitle">請填寫註冊資料並寄信申請，由幹部核對姓名、學號、電話與信箱後協助重設密碼。</p>
         </div>
         <button class="modal-close" data-close-password-reset type="button" aria-label="關閉忘記密碼視窗">
           <span aria-hidden="true">+</span>
@@ -672,11 +670,17 @@ const passwordResetModalMarkup = `
             <label for="reset-email">註冊電子郵件</label>
             <input id="reset-email" name="email" type="email" autocomplete="email" placeholder="your@email.com" required />
           </div>
-          <p class="login-note" data-password-reset-hint>請至註冊信箱收取重設郵件，也請檢查垃圾郵件匣。</p>
+          <div class="form-field"><label for="reset-name">姓名</label><input id="reset-name" name="name" autocomplete="name" maxlength="100" required /></div>
+          <div class="form-field"><label for="reset-student-id">學號</label><input id="reset-student-id" name="studentId" maxlength="30" required /></div>
+          <div class="form-field"><label for="reset-phone">聯絡電話</label><input id="reset-phone" name="phone" type="tel" autocomplete="tel" maxlength="30" required /></div>
+          <p class="login-note">申請將寄至 ntustbc@gmail.com，僅供幹部核對身分。請勿提供密碼。</p>
+          <p class="login-note" data-password-reset-hint>填妥後會開啟郵件程式，請自行確認並寄出，才算提出申請。</p>
+          <textarea data-password-reset-copy readonly hidden aria-label="人工審核申請內容"></textarea>
+          <a href="https://www.instagram.com/ntust_badminton/" target="_blank" rel="noopener noreferrer">無法寄信？請私訊社團 Instagram 聯絡幹部</a>
         </div>
         <div class="modal-footer">
           <button class="button-secondary" data-close-password-reset type="button">取消</button>
-          <button class="login-button modal-submit" data-password-reset-submit type="submit">寄送重設連結</button>
+          <button class="login-button modal-submit" data-password-reset-submit type="submit">開啟申請郵件</button>
         </div>
       </form>
     </div>
@@ -689,8 +693,8 @@ const adminPasswordResetModalMarkup = `
     <div class="modal-dialog auth-modal-dialog">
       <div class="modal-header">
         <div>
-          <h2 class="modal-title">寄送密碼重設連結</h2>
-          <p class="modal-subtitle" data-admin-password-reset-target>請確認註冊信箱，再寄送密碼重設連結。</p>
+          <h2 class="modal-title">人工核對與重設密碼</h2>
+          <p class="modal-subtitle" data-admin-password-reset-target>請確認註冊信箱，再人工核對與重設密碼。</p>
         </div>
         <button class="modal-close" data-close-admin-password-reset type="button" aria-label="關閉設定密碼視窗"><span aria-hidden="true">+</span></button>
       </div>
@@ -698,12 +702,13 @@ const adminPasswordResetModalMarkup = `
         <input name="uid" type="hidden" />
         <input name="email" type="hidden" />
         <div class="modal-body form-grid">
-          <p class="login-note">重設連結將寄到此帳號的註冊信箱，由本人開啟連結設定新密碼。</p>
+          <p class="login-note">請先比對社員資料與申請郵件；必要時以原留電話聯絡本人。核對完成後，前往 Firebase 後台選取此帳號並協助重設密碼。</p>
+          <a class="button-secondary" href="https://console.firebase.google.com/project/ntustbc-64c11/authentication/users" target="_blank" rel="noopener noreferrer">開啟 Firebase 帳號管理</a>
           <p class="login-note" data-admin-password-reset-hint></p>
         </div>
         <div class="modal-footer">
           <button class="button-secondary" data-close-admin-password-reset type="button">取消</button>
-          <button class="login-button modal-submit" data-admin-password-reset-submit type="submit">寄送重設連結</button>
+          <button class="login-button modal-submit" data-admin-password-reset-submit type="submit">關閉</button>
         </div>
       </form>
     </div>
@@ -1758,7 +1763,7 @@ const openNotificationCenter = async () => {
           <span class="notification-expand-label">查看</span>
         </summary>
         <button class="notification-delete-button" data-dismiss-notification type="button" aria-label="刪除「${escapeHtml(item.title)}」通知">×</button>
-        <div class="notification-detail"><p>${escapeHtml(copy)}</p>${item.passwordResetUserId && currentUserIsAdmin ? `<button class="button-secondary" data-review-password-reset data-member-id="${escapeHtml(item.passwordResetUserId)}" data-member-email="${escapeHtml(item.passwordResetEmail)}" type="button">寄送重設連結</button>` : ""}</div>
+        <div class="notification-detail"><p>${escapeHtml(copy)}</p>${item.passwordResetUserId && currentUserIsAdmin ? `<button class="button-secondary" data-review-password-reset data-member-id="${escapeHtml(item.passwordResetUserId)}" data-member-email="${escapeHtml(item.passwordResetEmail)}" type="button">人工核對</button>` : ""}</div>
       </details>`;
     }).join("") : `<article class="notification-empty"><h3>目前沒有通知</h3><p>新公告與報名狀態會顯示在這裡。</p></article>`;
     clearLoadingState(list);
@@ -2756,8 +2761,9 @@ const openPasswordResetModal = () => {
   const { resetModal, form, emailInput } = getPasswordResetModalElements();
   const enteredEmail = String(loginEmailInput?.value || "").trim();
   form.reset();
+  resetModal.querySelector("[data-password-reset-copy]").hidden = true;
   if (emailInput) emailInput.value = enteredEmail;
-  setPasswordResetHint("請至註冊信箱收取重設郵件，也請檢查垃圾郵件匣。");
+  setPasswordResetHint("填妥後會開啟郵件程式，請自行確認並寄出，才算提出申請。");
   loginModal.hidden = true;
   resetModal.hidden = false;
   body.classList.add("modal-open");
@@ -2770,44 +2776,31 @@ const closePasswordResetModal = () => {
   body.classList.remove("modal-open");
 };
 
-const PASSWORD_RESET_SUCCESS_MESSAGE = "若此信箱已註冊，將收到密碼重設郵件。請依信中連結設定新密碼，並檢查垃圾郵件匣。";
-
-const getPasswordResetError = (error) => ({
-  "auth/invalid-email": "請輸入有效的註冊電子郵件。",
-  "auth/too-many-requests": "寄送過於頻繁，請稍後再試。",
-  "auth/network-request-failed": "無法連線至密碼重設服務，請檢查網路後再試。",
-}[error?.code] || "目前無法寄送密碼重設郵件，請稍後再試；若持續發生，請聯絡社團幹部。");
-
-const sendAccountPasswordReset = async (email) => {
-  await ensureAuthReady();
-  if (!auth || !sendPasswordResetEmail) throw new Error("密碼重設服務目前無法使用。");
-  auth.languageCode = "zh-TW";
-  try {
-    await sendPasswordResetEmail(auth, email);
-  } catch (error) {
-    // Keep the response identical for unregistered addresses.
-    if (error?.code !== "auth/user-not-found") throw error;
-  }
+const buildManualPasswordResetEmail = ({ email, name, studentId, phone }) => {
+  const body = ["幹部您好，我要申請人工核對身分並重設密碼。", "",
+    `註冊信箱：${email}`, `姓名：${name}`, `學號：${studentId}`, `聯絡電話：${phone}`,
+    "", "請核對以上資料後聯絡我，謝謝。"].join("\n");
+  return { body, url: `mailto:ntustbc@gmail.com?subject=${encodeURIComponent("密碼重設人工審核申請")}&body=${encodeURIComponent(body)}` };
 };
 
-const handlePasswordResetSubmit = async (event) => {
+const handlePasswordResetSubmit = (event) => {
   event.preventDefault();
-  const { emailInput, submitButton } = getPasswordResetModalElements();
-  const email = String(emailInput?.value || "").trim().toLowerCase();
-  if (!email || !emailInput?.checkValidity()) {
-    setPasswordResetHint("請輸入有效的註冊電子郵件。", "error");
-    emailInput?.focus();
-    return;
+  const { resetModal, form } = getPasswordResetModalElements();
+  for (const field of form.querySelectorAll("input[required]")) {
+    field.value = field.value.trim();
+    if (!field.value || !field.checkValidity()) {
+      setPasswordResetHint("請完整填寫有效的註冊信箱、姓名、學號與電話。", "error");
+      field.focus();
+      return;
+    }
   }
-  setButtonLoading(submitButton, true, "寄送中…");
-  try {
-    await sendAccountPasswordReset(email);
-    setPasswordResetHint(PASSWORD_RESET_SUCCESS_MESSAGE, "success");
-  } catch (error) {
-    setPasswordResetHint(getPasswordResetError(error), "error");
-  } finally {
-    setButtonLoading(submitButton, false);
-  }
+  const values = Object.fromEntries(new FormData(form));
+  const request = buildManualPasswordResetEmail(values);
+  const copy = resetModal.querySelector("[data-password-reset-copy]");
+  copy.value = request.body;
+  copy.hidden = false;
+  setPasswordResetHint("尚未寄出申請。請在開啟的郵件程式確認寄出；若未開啟，可複製下方內容寄至 ntustbc@gmail.com，或私訊社團幹部。");
+  window.location.href = request.url;
 };
 
 const bindPasswordResetModalEvents = () => {
@@ -2829,7 +2822,7 @@ const openAdminPasswordResetModal = (memberId, email) => {
   form.reset();
   form.elements.namedItem("uid").value = memberId;
   form.elements.namedItem("email").value = email;
-  target.textContent = `帳號：${email || memberId}。重設連結將寄至此信箱。`;
+  target.textContent = `帳號：${email || memberId}。請比對申請人的姓名、學號與電話。`;
   setMessageTone(hint, "", "default");
   modal.hidden = false;
   body.classList.add("modal-open");
@@ -2842,23 +2835,9 @@ const closeAdminPasswordResetModal = () => {
   body.classList.remove("modal-open");
 };
 
-const handleAdminPasswordResetSubmit = async (event) => {
+const handleAdminPasswordResetSubmit = (event) => {
   event.preventDefault();
-  const { form, hint, submitButton } = getAdminPasswordResetModalElements();
-  const email = String(form.elements.namedItem("email").value || "").trim().toLowerCase();
-  if (!currentUserIsAdmin || !email) {
-    setMessageTone(hint, "請確認管理員登入狀態與社員註冊信箱。", "error");
-    return;
-  }
-  setButtonLoading(submitButton, true, "寄送中…");
-  try {
-    await sendAccountPasswordReset(email);
-    setMessageTone(hint, PASSWORD_RESET_SUCCESS_MESSAGE, "success");
-  } catch (error) {
-    setMessageTone(hint, getPasswordResetError(error), "error");
-  } finally {
-    setButtonLoading(submitButton, false);
-  }
+  closeAdminPasswordResetModal();
 };
 
 const bindAdminPasswordResetModalEvents = () => {
@@ -4781,7 +4760,7 @@ const getRosterManagementRowMarkup = (member = {}, index = 0, { disableStatus = 
       </td>
       <td>
         <div class="member-row-actions">
-          <button class="button-secondary member-password-reset-button" data-member-password-reset data-member-id="${escapeHtml(memberId)}" data-member-email="${escapeHtml(email)}" type="button"${controlsDisabled ? ' disabled title="請從自己的帳號設定變更密碼"' : ""}>寄送重設連結</button>
+          <button class="button-secondary member-password-reset-button" data-member-password-reset data-member-id="${escapeHtml(memberId)}" data-member-email="${escapeHtml(email)}" type="button"${controlsDisabled ? ' disabled title="請從自己的帳號設定變更密碼"' : ""}>人工核對</button>
           <button class="member-delete-button" data-member-account-delete data-member-id="${escapeHtml(memberId)}" data-member-email="${escapeHtml(email)}" type="button"${controlsDisabled ? ' disabled title="不能刪除目前登入中的管理員帳號"' : ""}>刪除資料</button>
         </div>
       </td>
@@ -5332,7 +5311,7 @@ const renderMembersExportToolbar = (members = []) => {
           </td>
           <td>
             <div class="member-row-actions">
-              <button class="button-secondary member-password-reset-button" data-member-password-reset data-member-id="${escapeHtml(member.id)}" data-member-email="${escapeHtml((member.email || "").trim().toLowerCase())}" type="button" ${member.id === currentUser?.uid ? 'disabled title="請從自己的帳號設定變更密碼"' : ""}>寄送重設連結</button>
+              <button class="button-secondary member-password-reset-button" data-member-password-reset data-member-id="${escapeHtml(member.id)}" data-member-email="${escapeHtml((member.email || "").trim().toLowerCase())}" type="button" ${member.id === currentUser?.uid ? 'disabled title="請從自己的帳號設定變更密碼"' : ""}>人工核對</button>
               <button
                 class="member-delete-button"
                 data-member-account-delete
