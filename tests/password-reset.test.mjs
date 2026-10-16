@@ -13,19 +13,20 @@ test("manual recovery requires all four fields and never sends automatic reset e
   }
   assert.doesNotMatch(siteSource, /sendPasswordResetEmail|sendAccountPasswordReset/);
   assert.doesNotMatch(firebaseModules, /sendPasswordResetEmail/);
-  assert.match(siteSource, /尚未寄出申請/);
+  assert.match(siteSource, /尚未送出申請/);
 });
 
-test("manual review email encodes identity details without injecting mail headers", () => {
-  const source = siteSource.slice(siteSource.indexOf("const buildManualPasswordResetEmail ="), siteSource.indexOf("const handlePasswordResetSubmit ="));
+test("manual review prepares identity details without opening email or sending a request", () => {
+  const source = siteSource.slice(siteSource.indexOf("const buildManualPasswordResetRequest ="), siteSource.indexOf("const handlePasswordResetSubmit ="));
   const context = {};
-  runInNewContext(source + "\nglobalThis.build = buildManualPasswordResetEmail;", context);
-  const details = { email: "member@example.com", name: "王小明 & ?bcc=bad@example.com", studentId: "B123", phone: "0912345678" };
+  runInNewContext(source + "\nglobalThis.build = buildManualPasswordResetRequest;", context);
+  const details = { email: "member@example.com", name: "王小明", studentId: "B123", phone: "0912345678" };
   const result = context.build(details);
-  const url = new URL(result.url);
-  assert.equal(url.pathname, "ntustbc@gmail.com");
-  assert.equal(url.searchParams.get("bcc"), null);
-  for (const value of Object.values(details)) assert.ok(url.searchParams.get("body").includes(value));
+  for (const value of Object.values(details)) assert.ok(result.includes(value));
+  const handler = siteSource.slice(siteSource.indexOf("const handlePasswordResetSubmit ="), siteSource.indexOf("const bindPasswordResetModalEvents ="));
+  assert.match(handler, /navigator\.clipboard\.writeText/);
+  assert.match(handler, /copy\.select\(\)/);
+  assert.doesNotMatch(handler, /mailto:|window\.location|httpsCallable|setDoc|fetch\(/);
 });
 
 test("password reset requests notify administrators without revealing missing accounts", () => {

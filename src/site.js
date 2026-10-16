@@ -658,7 +658,7 @@ const passwordResetModalMarkup = `
       <div class="modal-header">
         <div>
           <h2 class="modal-title">忘記密碼</h2>
-          <p class="modal-subtitle">請填寫註冊資料並寄信申請，由幹部核對姓名、學號、電話與信箱後協助重設密碼。</p>
+          <p class="modal-subtitle">請提供註冊資料，由幹部核對姓名、學號、電話與信箱後協助重設密碼。</p>
         </div>
         <button class="modal-close" data-close-password-reset type="button" aria-label="關閉忘記密碼視窗">
           <span aria-hidden="true">+</span>
@@ -673,14 +673,14 @@ const passwordResetModalMarkup = `
           <div class="form-field"><label for="reset-name">姓名</label><input id="reset-name" name="name" autocomplete="name" maxlength="100" required /></div>
           <div class="form-field"><label for="reset-student-id">學號</label><input id="reset-student-id" name="studentId" maxlength="30" required /></div>
           <div class="form-field"><label for="reset-phone">聯絡電話</label><input id="reset-phone" name="phone" type="tel" autocomplete="tel" maxlength="30" required /></div>
-          <p class="login-note">申請將寄至 ntustbc@gmail.com，僅供幹部核對身分。請勿提供密碼。</p>
-          <p class="login-note" data-password-reset-hint>填妥後會開啟郵件程式，請自行確認並寄出，才算提出申請。</p>
+          <p class="login-note">資料僅供幹部核對身分，請勿提供密碼。</p>
+          <p class="login-note" data-password-reset-hint>填妥後可複製申請內容，私訊社團 Instagram 或當面交給幹部。</p>
           <textarea data-password-reset-copy readonly hidden aria-label="人工審核申請內容"></textarea>
-          <a href="https://www.instagram.com/ntust_badminton/" target="_blank" rel="noopener noreferrer">無法寄信？請私訊社團 Instagram 聯絡幹部</a>
+          <a href="https://www.instagram.com/ntust_badminton/" target="_blank" rel="noopener noreferrer">私訊社團 Instagram 聯絡幹部</a>
         </div>
         <div class="modal-footer">
           <button class="button-secondary" data-close-password-reset type="button">取消</button>
-          <button class="login-button modal-submit" data-password-reset-submit type="submit">開啟申請郵件</button>
+          <button class="login-button modal-submit" data-password-reset-submit type="submit">複製申請內容</button>
         </div>
       </form>
     </div>
@@ -702,7 +702,7 @@ const adminPasswordResetModalMarkup = `
         <input name="uid" type="hidden" />
         <input name="email" type="hidden" />
         <div class="modal-body form-grid">
-          <p class="login-note">請先比對社員資料與申請郵件；必要時以原留電話聯絡本人。核對完成後，前往 Firebase 後台選取此帳號並協助重設密碼。</p>
+          <p class="login-note">請先比對社員資料與申請內容；必要時以原留電話聯絡本人。核對完成後，前往 Firebase 後台選取此帳號並協助重設密碼。</p>
           <a class="button-secondary" href="https://console.firebase.google.com/project/ntustbc-64c11/authentication/users" target="_blank" rel="noopener noreferrer">開啟 Firebase 帳號管理</a>
           <p class="login-note" data-admin-password-reset-hint></p>
         </div>
@@ -2763,7 +2763,7 @@ const openPasswordResetModal = () => {
   form.reset();
   resetModal.querySelector("[data-password-reset-copy]").hidden = true;
   if (emailInput) emailInput.value = enteredEmail;
-  setPasswordResetHint("填妥後會開啟郵件程式，請自行確認並寄出，才算提出申請。");
+  setPasswordResetHint("填妥後可複製申請內容，私訊社團 Instagram 或當面交給幹部。");
   loginModal.hidden = true;
   resetModal.hidden = false;
   body.classList.add("modal-open");
@@ -2776,14 +2776,14 @@ const closePasswordResetModal = () => {
   body.classList.remove("modal-open");
 };
 
-const buildManualPasswordResetEmail = ({ email, name, studentId, phone }) => {
+const buildManualPasswordResetRequest = ({ email, name, studentId, phone }) => {
   const body = ["幹部您好，我要申請人工核對身分並重設密碼。", "",
     `註冊信箱：${email}`, `姓名：${name}`, `學號：${studentId}`, `聯絡電話：${phone}`,
     "", "請核對以上資料後聯絡我，謝謝。"].join("\n");
-  return { body, url: `mailto:ntustbc@gmail.com?subject=${encodeURIComponent("密碼重設人工審核申請")}&body=${encodeURIComponent(body)}` };
+  return body;
 };
 
-const handlePasswordResetSubmit = (event) => {
+const handlePasswordResetSubmit = async (event) => {
   event.preventDefault();
   const { resetModal, form } = getPasswordResetModalElements();
   for (const field of form.querySelectorAll("input[required]")) {
@@ -2795,12 +2795,18 @@ const handlePasswordResetSubmit = (event) => {
     }
   }
   const values = Object.fromEntries(new FormData(form));
-  const request = buildManualPasswordResetEmail(values);
+  const request = buildManualPasswordResetRequest(values);
   const copy = resetModal.querySelector("[data-password-reset-copy]");
-  copy.value = request.body;
+  copy.value = request;
   copy.hidden = false;
-  setPasswordResetHint("尚未寄出申請。請在開啟的郵件程式確認寄出；若未開啟，可複製下方內容寄至 ntustbc@gmail.com，或私訊社團幹部。");
-  window.location.href = request.url;
+  try {
+    await navigator.clipboard.writeText(request);
+    setPasswordResetHint("已複製申請內容，尚未送出申請。請私訊社團 Instagram，或當面交給幹部核對。");
+  } catch {
+    copy.focus();
+    copy.select();
+    setPasswordResetHint("請手動複製下方內容，私訊社團 Instagram 或當面交給幹部。尚未送出申請。");
+  }
 };
 
 const bindPasswordResetModalEvents = () => {
