@@ -658,7 +658,7 @@ const passwordResetModalMarkup = `
       <div class="modal-header">
         <div>
           <h2 class="modal-title">忘記密碼</h2>
-          <p class="modal-subtitle">輸入註冊信箱送出申請，幹部核對身分後會協助設定新密碼。</p>
+          <p class="modal-subtitle">輸入註冊信箱送出申請，不會寄送電子郵件。管理員人工審核同意後，才會協助更新密碼。</p>
         </div>
         <button class="modal-close" data-close-password-reset type="button" aria-label="關閉忘記密碼視窗">
           <span aria-hidden="true">+</span>
@@ -699,11 +699,12 @@ const adminPasswordResetModalMarkup = `
           <div class="form-field"><label for="admin-new-password">新密碼</label><input id="admin-new-password" name="newPassword" minlength="8" maxlength="128" type="password" autocomplete="new-password" placeholder="8 至 128 個字元" required /></div>
           <div class="form-field"><label for="admin-confirm-password">確認新密碼</label><input id="admin-confirm-password" name="newPasswordConfirm" minlength="8" maxlength="128" type="password" autocomplete="new-password" placeholder="再次輸入新密碼" required /></div>
           <p class="login-note">請以安全方式將暫時密碼告知本人，並提醒對方登入後立即在帳號設定更換。</p>
+          <label><input name="identityVerified" type="checkbox" required /> 我已核對本人身分，同意更新此帳號密碼</label>
           <p class="login-note" data-admin-password-reset-hint></p>
         </div>
         <div class="modal-footer">
           <button class="button-secondary" data-close-admin-password-reset type="button">取消</button>
-          <button class="login-button modal-submit" data-admin-password-reset-submit type="submit">確認設定密碼</button>
+          <button class="login-button modal-submit" data-admin-password-reset-submit type="submit">同意並更新密碼</button>
         </div>
       </form>
     </div>
@@ -1611,6 +1612,8 @@ const loadNotificationItems = async () => {
         id: `admin:${entry.id}`,
         title: entry.title || "管理通知",
         copy: entry.message || entry.copy || "請查看最新管理事件。",
+        passwordResetUserId: entry.type === "password_reset_requested" && entry.status === "pending" ? entry.userId : "",
+        passwordResetEmail: entry.email || "",
         date: entry.createdAt || new Date(),
         sortMs: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
       });
@@ -1756,7 +1759,7 @@ const openNotificationCenter = async () => {
           <span class="notification-expand-label">查看</span>
         </summary>
         <button class="notification-delete-button" data-dismiss-notification type="button" aria-label="刪除「${escapeHtml(item.title)}」通知">×</button>
-        <div class="notification-detail"><p>${escapeHtml(copy)}</p></div>
+        <div class="notification-detail"><p>${escapeHtml(copy)}</p>${item.passwordResetUserId && currentUserIsAdmin ? `<button class="button-secondary" data-review-password-reset data-member-id="${escapeHtml(item.passwordResetUserId)}" data-member-email="${escapeHtml(item.passwordResetEmail)}" type="button">審核並設定密碼</button>` : ""}</div>
       </details>`;
     }).join("") : `<article class="notification-empty"><h3>目前沒有通知</h3><p>新公告與報名狀態會顯示在這裡。</p></article>`;
     clearLoadingState(list);
@@ -1780,6 +1783,12 @@ const bindNotificationCenter = () => {
   installHeaderAccountControls();
   configureNotificationRealtimeSubscriptions();
   document.addEventListener("click", async (event) => {
+    const reviewPasswordResetButton = event.target.closest("[data-review-password-reset]");
+    if (reviewPasswordResetButton && currentUserIsAdmin) {
+      ensureNotificationModal().hidden = true;
+      openAdminPasswordResetModal(reviewPasswordResetButton.dataset.memberId, reviewPasswordResetButton.dataset.memberEmail);
+      return;
+    }
     const selectAllInput = event.target.closest("[data-notification-select-all]");
     if (selectAllInput) {
       document.querySelectorAll("[data-notification-select]").forEach((checkbox) => {
@@ -2777,7 +2786,7 @@ const handlePasswordResetSubmit = async (event) => {
     await ensureAuthReady();
     if (!functionsClient || !httpsCallable) throw new Error("密碼重設服務目前無法使用。");
     await httpsCallable(functionsClient, "requestVerifiedPasswordReset")({ email });
-    setPasswordResetHint("申請已送出。若資料相符，管理員會核對身分並協助設定新密碼。", "success");
+    setPasswordResetHint("申請已送出，不會寄送電子郵件。若資料相符，管理員會收到通知，人工審核同意後協助更新密碼。", "success");
   } catch (error) {
     const code = String(error?.code || "");
     if (code.includes("resource-exhausted")) {
@@ -2834,6 +2843,10 @@ const handleAdminPasswordResetSubmit = async (event) => {
     setMessageTone(hint, "只有管理員可以設定密碼。", "error");
     return;
   }
+  if (values.identityVerified !== "on") {
+    setMessageTone(hint, "請先核對本人身分，並勾選同意更新密碼。", "error");
+    return;
+  }
   if (newPassword.length < 8 || newPassword.length > 128) {
     setMessageTone(hint, "新密碼需為 8 至 128 個字元。", "error");
     form.elements.namedItem("newPassword")?.focus();
@@ -2849,7 +2862,7 @@ const handleAdminPasswordResetSubmit = async (event) => {
   try {
     await ensureAuthReady();
     if (!functionsClient || !httpsCallable) throw new Error("密碼重設服務目前無法使用。");
-    await httpsCallable(functionsClient, "adminResetMemberPassword")({ uid, newPassword });
+    await httpsCallable(functionsClient, "adminResetMemberPassword")({ uid, newPassword, identityVerified: true });
     closeAdminPasswordResetModal();
     showToast(`${email || "這個帳號"} 的密碼已重新設定。`, { tone: "success", title: "密碼已更新" });
     await syncNotificationIndicator({ refreshProfile: true });

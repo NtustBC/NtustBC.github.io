@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 const siteSource = readFileSync(new URL("../src/site.js", import.meta.url), "utf8");
 const firebaseModules = readFileSync(new URL("../src/firebase-modules.js", import.meta.url), "utf8");
@@ -33,4 +34,27 @@ test("signed-in users can change their own password after reauthentication", () 
   assert.match(siteSource, /reauthenticateWithCredential\(accountUser, credential\)/);
   assert.match(siteSource, /updatePassword\(accountUser, newPassword\)/);
   assert.match(siteSource, /data-update-account-password/);
+});
+
+test("administrator must explicitly verify identity before any password update", async () => {
+  const handlerSource = functionsSource.slice(
+    functionsSource.indexOf("exports.adminResetMemberPassword ="),
+    functionsSource.indexOf("exports.deleteMemberAccount ="),
+  );
+  let passwordUpdated = false;
+  const context = {
+    exports: {}, CALLABLE_OPTIONS: {}, onCall: (_options, handler) => handler,
+    HttpsError: class extends Error { constructor(code, message) { super(message); this.code = code; } },
+    admin: {
+      firestore: () => ({ collection: () => ({ doc: () => ({ get: async () => ({ exists: true }) }) }) }),
+      auth: () => ({ updateUser: async () => { passwordUpdated = true; } }),
+    },
+  };
+  runInNewContext(handlerSource, context);
+  for (const identityVerified of [undefined, false, "true"]) {
+    await assert.rejects(context.exports.adminResetMemberPassword({
+      auth: { uid: "admin" }, data: { uid: "member", newPassword: "password123", identityVerified },
+    }), (error) => error.code === "failed-precondition");
+  }
+  assert.equal(passwordUpdated, false);
 });

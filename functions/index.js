@@ -183,6 +183,9 @@ exports.adminResetMemberPassword = onCall(CALLABLE_OPTIONS, async (request) => {
   const firestore = admin.firestore();
   const callerAdminSnapshot = await firestore.collection("admins").doc(callerUid).get();
   if (!callerAdminSnapshot.exists) throw new HttpsError("permission-denied", "只有管理員可以重設密碼。");
+  if (request.data?.identityVerified !== true) {
+    throw new HttpsError("failed-precondition", "請先核對本人身分，並同意更新密碼。");
+  }
 
   const uid = String(request.data?.uid || "").trim();
   const newPassword = String(request.data?.newPassword || "");
