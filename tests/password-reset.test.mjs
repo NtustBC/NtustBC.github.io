@@ -13,20 +13,45 @@ test("manual recovery requires all four fields and never sends automatic reset e
   }
   assert.doesNotMatch(siteSource, /sendPasswordResetEmail|sendAccountPasswordReset/);
   assert.doesNotMatch(firebaseModules, /sendPasswordResetEmail/);
-  assert.match(siteSource, /尚未送出申請/);
+  assert.match(siteSource, /管理員會在通知中心收到通知/);
 });
 
-test("manual review prepares identity details without opening email or sending a request", () => {
-  const source = siteSource.slice(siteSource.indexOf("const buildManualPasswordResetRequest ="), siteSource.indexOf("const handlePasswordResetSubmit ="));
-  const context = {};
-  runInNewContext(source + "\nglobalThis.build = buildManualPasswordResetRequest;", context);
-  const details = { email: "member@example.com", name: "王小明", studentId: "B123", phone: "0912345678" };
-  const result = context.build(details);
-  for (const value of Object.values(details)) assert.ok(result.includes(value));
+test("manual requests write notifications without email or clipboard", async () => {
+  const source = siteSource.slice(siteSource.indexOf("const submitManualPasswordReset ="), siteSource.indexOf("const handlePasswordResetSubmit ="));
+  const writes = [];
+  const context = { ensureAuthReady: async () => {}, db: {}, ADMIN_NOTIFICATION_COLLECTION: "adminNotifications",
+    doc: (_db, collection, id) => ({ collection, id }), serverTimestamp: () => "server-time",
+    setDoc: async (ref, data) => writes.push({ ref, data }) };
+  runInNewContext(source + "\nglobalThis.submit = submitManualPasswordReset;", context);
+  await context.submit({ email: "member@example.com", name: "Member", studentId: "B123", phone: "0912345678" });
+  assert.equal(writes[0].ref.id, "password-reset-member@example.com");
+  assert.equal(writes[0].data.status, "pending");
+  assert.equal(writes[0].data.requestedAt, "server-time");
+  assert.match(siteSource, /確認是本人/);
   const handler = siteSource.slice(siteSource.indexOf("const handlePasswordResetSubmit ="), siteSource.indexOf("const bindPasswordResetModalEvents ="));
-  assert.match(handler, /navigator\.clipboard\.writeText/);
-  assert.match(handler, /copy\.select\(\)/);
-  assert.doesNotMatch(handler, /mailto:|window\.location|httpsCallable|setDoc|fetch\(/);
+  assert.doesNotMatch(handler, /mailto:|clipboard|httpsCallable/);
+});
+
+test("identity confirmation is admin-only and rejects already processed requests", async () => {
+  const source = siteSource.slice(siteSource.indexOf("const confirmPasswordResetIdentity ="), siteSource.indexOf("const bindPasswordResetModalEvents ="));
+  const updates = [];
+  let status = "pending";
+  const context = { currentUserIsAdmin: false, currentUser: { uid: "admin" }, db: {},
+    ADMIN_NOTIFICATION_COLLECTION: "adminNotifications", doc: () => "ref", serverTimestamp: () => "time",
+    runTransaction: async (_db, callback) => callback({
+      get: async () => ({ exists: () => true, data: () => ({ type: "password_reset_requested", status }) }),
+      update: (_ref, data) => updates.push(data),
+    }),
+  };
+  runInNewContext(source + "\nglobalThis.confirm = confirmPasswordResetIdentity;", context);
+  await assert.rejects(context.confirm("request"), /只有管理員/);
+  context.currentUserIsAdmin = true;
+  await context.confirm("request");
+  assert.equal(updates[0].status, "identity_verified");
+  assert.equal(updates[0].verifiedBy, "admin");
+  status = "identity_verified";
+  await assert.rejects(context.confirm("request"), /已處理/);
+  assert.equal(updates.length, 1);
 });
 
 test("password reset requests notify administrators without revealing missing accounts", () => {

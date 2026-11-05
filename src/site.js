@@ -21,6 +21,7 @@ let deleteDoc;
 let doc;
 let getDoc;
 let getDocs;
+let getDocsFromServer;
 let getFirestore;
 let getFunctions;
 let httpsCallable;
@@ -64,6 +65,7 @@ const ensureFirebaseModules = async () => {
         doc,
         getDoc,
         getDocs,
+        getDocsFromServer,
         getFirestore,
         getFunctions,
         httpsCallable,
@@ -658,7 +660,7 @@ const passwordResetModalMarkup = `
       <div class="modal-header">
         <div>
           <h2 class="modal-title">忘記密碼</h2>
-          <p class="modal-subtitle">請提供註冊資料，由幹部核對姓名、學號、電話與信箱後協助重設密碼。</p>
+          <p class="modal-subtitle">請填寫註冊信箱、姓名、學號與電話。資料符合後會通知幹部，由幹部人工確認本人身分。</p>
         </div>
         <button class="modal-close" data-close-password-reset type="button" aria-label="關閉忘記密碼視窗">
           <span aria-hidden="true">+</span>
@@ -674,13 +676,12 @@ const passwordResetModalMarkup = `
           <div class="form-field"><label for="reset-student-id">學號</label><input id="reset-student-id" name="studentId" maxlength="30" required /></div>
           <div class="form-field"><label for="reset-phone">聯絡電話</label><input id="reset-phone" name="phone" type="tel" autocomplete="tel" maxlength="30" required /></div>
           <p class="login-note">資料僅供幹部核對身分，請勿提供密碼。</p>
-          <p class="login-note" data-password-reset-hint>填妥後可複製申請內容，私訊社團 Instagram 或當面交給幹部。</p>
-          <textarea data-password-reset-copy readonly hidden aria-label="人工審核申請內容"></textarea>
+          <p class="login-note" data-password-reset-hint>四項資料需與註冊資料完全一致，送出後請等候幹部確認。</p>
           <a href="https://www.instagram.com/ntust_badminton/" target="_blank" rel="noopener noreferrer">私訊社團 Instagram 聯絡幹部</a>
         </div>
         <div class="modal-footer">
           <button class="button-secondary" data-close-password-reset type="button">取消</button>
-          <button class="login-button modal-submit" data-password-reset-submit type="submit">複製申請內容</button>
+          <button class="login-button modal-submit" data-password-reset-submit type="submit">送出審核申請</button>
         </div>
       </form>
     </div>
@@ -1613,10 +1614,10 @@ const loadNotificationItems = async () => {
     adminNotifications.slice(0, 50).forEach((entry) => {
       const createdAtMs = getTimestampMs(entry.createdAt);
       items.push({
-        id: `admin:${entry.id}`,
-        title: entry.title || "管理通知",
-        copy: entry.message || entry.copy || "請查看最新管理事件。",
-        passwordResetUserId: entry.type === "password_reset_requested" && entry.status === "pending" ? entry.userId : "",
+        id: entry.type === "password_reset_requested" ? `admin:${entry.id}:${getTimestampMs(entry.requestedAt)}` : `admin:${entry.id}`,
+        title: entry.type === "password_reset_requested" ? (entry.status === "identity_verified" ? "密碼重設：已確認本人" : "密碼重設：待確認本人") : entry.title || "管理通知",
+        copy: entry.type === "password_reset_requested" ? `姓名：${entry.name || ""}；學號：${entry.studentId || ""}；電話：${entry.phone || ""}；註冊信箱：${entry.email || ""}。${entry.status === "identity_verified" ? "已確認本人，請至 Firebase 後台協助重設密碼。" : "請以原留聯絡方式核實本人後再確認。"}` : entry.message || entry.copy || "請查看最新管理事件。",
+        passwordResetRequestId: entry.type === "password_reset_requested" && entry.status === "pending" ? entry.id : "",
         passwordResetEmail: entry.email || "",
         date: entry.createdAt || new Date(),
         sortMs: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
@@ -1763,7 +1764,7 @@ const openNotificationCenter = async () => {
           <span class="notification-expand-label">查看</span>
         </summary>
         <button class="notification-delete-button" data-dismiss-notification type="button" aria-label="刪除「${escapeHtml(item.title)}」通知">×</button>
-        <div class="notification-detail"><p>${escapeHtml(copy)}</p>${item.passwordResetUserId && currentUserIsAdmin ? `<button class="button-secondary" data-review-password-reset data-member-id="${escapeHtml(item.passwordResetUserId)}" data-member-email="${escapeHtml(item.passwordResetEmail)}" type="button">人工核對</button>` : ""}</div>
+        <div class="notification-detail"><p>${escapeHtml(copy)}</p>${item.passwordResetRequestId && currentUserIsAdmin ? `<button class="button-secondary" data-confirm-password-reset data-request-id="${escapeHtml(item.passwordResetRequestId)}" type="button">確認是本人</button>` : ""}</div>
       </details>`;
     }).join("") : `<article class="notification-empty"><h3>目前沒有通知</h3><p>新公告與報名狀態會顯示在這裡。</p></article>`;
     clearLoadingState(list);
@@ -1787,10 +1788,17 @@ const bindNotificationCenter = () => {
   installHeaderAccountControls();
   configureNotificationRealtimeSubscriptions();
   document.addEventListener("click", async (event) => {
-    const reviewPasswordResetButton = event.target.closest("[data-review-password-reset]");
-    if (reviewPasswordResetButton && currentUserIsAdmin) {
-      ensureNotificationModal().hidden = true;
-      openAdminPasswordResetModal(reviewPasswordResetButton.dataset.memberId, reviewPasswordResetButton.dataset.memberEmail);
+    const confirmResetButton = event.target.closest("[data-confirm-password-reset]");
+    if (confirmResetButton && currentUserIsAdmin) {
+      if (!window.confirm("請先以原留電話或當面核對身分。確定已確認是本人？此操作只記錄審核，不會變更密碼。")) return;
+      confirmResetButton.disabled = true;
+      try {
+        await confirmPasswordResetIdentity(confirmResetButton.dataset.requestId);
+        showToast("已記錄本人確認，請至 Firebase 後台協助重設密碼。", { tone: "success" });
+        await openNotificationCenter();
+      } catch (error) {
+        showToast(error.message || "確認失敗，請稍後再試。", { tone: "error" });
+      } finally { confirmResetButton.disabled = false; }
       return;
     }
     const selectAllInput = event.target.closest("[data-notification-select-all]");
@@ -2680,6 +2688,8 @@ const ensureAuthReady = async () => {
         }
       }
 
+      if (user) void syncPasswordResetLookups().catch((error) => console.warn("Password reset lookup sync failed:", error));
+
       writeAuthSnapshot(user, currentUserIsAdmin);
 
       updateLoginButtons();
@@ -2761,9 +2771,8 @@ const openPasswordResetModal = () => {
   const { resetModal, form, emailInput } = getPasswordResetModalElements();
   const enteredEmail = String(loginEmailInput?.value || "").trim();
   form.reset();
-  resetModal.querySelector("[data-password-reset-copy]").hidden = true;
   if (emailInput) emailInput.value = enteredEmail;
-  setPasswordResetHint("填妥後可複製申請內容，私訊社團 Instagram 或當面交給幹部。");
+  setPasswordResetHint("四項資料需與註冊資料完全一致，送出後請等候幹部確認。");
   loginModal.hidden = true;
   resetModal.hidden = false;
   body.classList.add("modal-open");
@@ -2776,16 +2785,45 @@ const closePasswordResetModal = () => {
   body.classList.remove("modal-open");
 };
 
-const buildManualPasswordResetRequest = ({ email, name, studentId, phone }) => {
-  const body = ["幹部您好，我要申請人工核對身分並重設密碼。", "",
-    `註冊信箱：${email}`, `姓名：${name}`, `學號：${studentId}`, `聯絡電話：${phone}`,
-    "", "請核對以上資料後聯絡我，謝謝。"].join("\n");
-  return body;
+// Private email-to-member references let rules validate without exposing profiles.
+const syncPasswordResetLookup = async (memberId, member) => {
+  const email = String(member.email || "").trim().toLowerCase();
+  if (!email || email.includes("/")) return;
+  await setDoc(doc(db, "passwordResetLookups", email), { userId: memberId });
+};
+
+const syncPasswordResetLookups = async () => {
+  if (currentUserIsAdmin) {
+    const snapshot = await getDocs(collection(db, "members"));
+    for (let offset = 0; offset < snapshot.docs.length; offset += 400) {
+      const batch = writeBatch(db);
+      snapshot.docs.slice(offset, offset + 400).forEach((entry) => {
+        const email = String(entry.data().email || "").trim().toLowerCase();
+        if (email && !email.includes("/")) batch.set(doc(db, "passwordResetLookups", email), { userId: entry.id });
+      });
+      await batch.commit();
+    }
+  } else if (currentUser?.uid && currentMemberProfile) {
+    await syncPasswordResetLookup(currentUser.uid, currentMemberProfile);
+  }
+};
+
+const submitManualPasswordReset = async ({ email, name, studentId, phone }) => {
+  await ensureAuthReady();
+  if (!db) throw new Error("服務目前無法使用");
+  await setDoc(doc(db, ADMIN_NOTIFICATION_COLLECTION, `password-reset-${email}`), {
+    type: "password_reset_requested",
+    email, name, studentId, phone,
+    status: "pending",
+    requestedAt: serverTimestamp(),
+    createdAt: serverTimestamp(),
+  });
 };
 
 const handlePasswordResetSubmit = async (event) => {
   event.preventDefault();
-  const { resetModal, form } = getPasswordResetModalElements();
+  const { form, submitButton } = getPasswordResetModalElements();
+  if (submitButton.disabled) return;
   for (const field of form.querySelectorAll("input[required]")) {
     field.value = field.value.trim();
     if (!field.value || !field.checkValidity()) {
@@ -2795,18 +2833,36 @@ const handlePasswordResetSubmit = async (event) => {
     }
   }
   const values = Object.fromEntries(new FormData(form));
-  const request = buildManualPasswordResetRequest(values);
-  const copy = resetModal.querySelector("[data-password-reset-copy]");
-  copy.value = request;
-  copy.hidden = false;
-  try {
-    await navigator.clipboard.writeText(request);
-    setPasswordResetHint("已複製申請內容，尚未送出申請。請私訊社團 Instagram，或當面交給幹部核對。");
-  } catch {
-    copy.focus();
-    copy.select();
-    setPasswordResetHint("請手動複製下方內容，私訊社團 Instagram 或當面交給幹部。尚未送出申請。");
+  values.email = values.email.toLowerCase();
+  if (values.email.includes("/")) {
+    setPasswordResetHint("請輸入有效的註冊信箱。", "error");
+    return;
   }
+  setButtonLoading(submitButton, true, "送出中…");
+  try {
+    await submitManualPasswordReset(values);
+    setPasswordResetHint("申請已送出，管理員會在通知中心收到通知。請等候幹部確認本人身分。", "success");
+  } catch (error) {
+    setPasswordResetHint(error?.code === "permission-denied"
+      ? "無法受理申請：請確認四項資料與註冊資料完全一致，且十分鐘內未重複申請；若仍失敗請聯絡幹部。"
+      : "申請未送出，請檢查網路並稍後重試。", "error");
+  } finally {
+    setButtonLoading(submitButton, false);
+  }
+};
+
+const confirmPasswordResetIdentity = async (requestId) => {
+  if (!currentUserIsAdmin || !currentUser?.uid) throw new Error("只有管理員可以確認身分。");
+  await runTransaction(db, async (transaction) => {
+    const reference = doc(db, ADMIN_NOTIFICATION_COLLECTION, requestId);
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists() || snapshot.data().type !== "password_reset_requested" || snapshot.data().status !== "pending") {
+      throw new Error("這筆申請已處理或不存在，請重新整理通知。");
+    }
+    transaction.update(reference, {
+      status: "identity_verified", verifiedBy: currentUser.uid, verifiedAt: serverTimestamp(),
+    });
+  });
 };
 
 const bindPasswordResetModalEvents = () => {
@@ -6481,8 +6537,54 @@ async function adminDeleteClassSessionSignup(sessionId, signupId) {
 }
 
 async function adminDeleteClassSession(sessionId) {
-  if (!functionsClient || !httpsCallable) throw new Error("管理社課服務目前無法使用，請稍後再試。");
-  return (await httpsCallable(functionsClient, "adminDeleteClassSession")({ sessionId })).data || { ok: true };
+  await ensureAuthReady();
+  if (!db || !currentUser?.uid || !currentUserIsAdmin) {
+    throw new Error("請先登入管理員帳號再刪除社課。");
+  }
+  if (!sessionId || sessionId.includes("/")) throw new Error("缺少有效的社課資料。");
+  if (navigator.onLine === false) throw new Error("請連上網路後再刪除社課。");
+
+  const sessionRef = getClassSessionDocRef(sessionId);
+  // Close registration first: concurrent signup transactions must retry against
+  // this change. Keep the session until cleanup succeeds so deletion is retryable.
+  const session = await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(sessionRef);
+    if (!snapshot.exists()) return {};
+    transaction.update(sessionRef, { signupRequired: false, deletionPending: true });
+    return snapshot.data();
+  });
+  const [signups, rosters] = await Promise.all([
+    getDocsFromServer(query(collection(db, CLASS_SIGNUP_COLLECTION), where("sessionId", "==", sessionId))),
+    getDocsFromServer(query(collection(db, CLASS_PUBLIC_ROSTER_COLLECTION), where("sessionId", "==", sessionId))),
+  ]);
+  const title = String(session.title || session.name || session.date || "社課");
+  // Each signup needs at most three writes; leave room under the batch limit.
+  for (let offset = 0; offset < signups.docs.length; offset += 120) {
+    const batch = writeBatch(db);
+    signups.docs.slice(offset, offset + 120).forEach((signup) => {
+      const userId = String(signup.data().userId || "").trim();
+      if (userId) batch.set(doc(db, MEMBER_NOTIFICATION_COLLECTION, `class-cancelled-${signup.id}`), {
+        userId, category: "classReminders", type: "class_cancelled",
+        title: "社課已取消", message: `「${title}」已由管理員取消。`,
+        sessionId, createdAt: serverTimestamp(),
+      });
+      batch.delete(signup.ref);
+      batch.delete(doc(db, CLASS_PUBLIC_ROSTER_COLLECTION, signup.id));
+    });
+    await batch.commit();
+  }
+  // Include orphaned roster records left by older versions of the site.
+  for (let offset = 0; offset < rosters.docs.length; offset += 400) {
+    const batch = writeBatch(db);
+    rosters.docs.slice(offset, offset + 400).forEach((entry) => batch.delete(entry.ref));
+    await batch.commit();
+  }
+  const batch = writeBatch(db);
+  batch.delete(doc(db, CLASS_SESSION_STATS_COLLECTION, sessionId));
+  batch.delete(getClassAlbumDocRef(sessionId));
+  batch.delete(sessionRef);
+  await batch.commit();
+  return { ok: true, notifiedCount: signups.size };
 }
 
 async function handleClassSignupSubmit(event) {

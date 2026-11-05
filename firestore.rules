@@ -577,7 +577,44 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
+    // This index is never readable by applicants. Only rules resolve an email
+    // to a member, then compare against the current private member record.
+    match /passwordResetLookups/{email} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() || (
+        isSignedIn() && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasOnly(["userId"])
+        && request.resource.data.userId is string
+        && get(/databases/$(database)/documents/members/$(request.resource.data.userId)).data.email.lower() == email
+      );
+      allow delete: if isAdmin();
+    }
+
+    function validPasswordResetRequest(notificationId) {
+      let data = request.resource.data;
+      let lookup = get(/databases/$(database)/documents/passwordResetLookups/$(data.email)).data;
+      let member = get(/databases/$(database)/documents/members/$(lookup.userId)).data;
+      return data.keys().hasOnly(["type", "email", "name", "studentId", "phone", "status", "requestedAt", "createdAt"])
+        && data.type == "password_reset_requested"
+        && data.email is string && data.email.size() <= 254
+        && data.email == member.email.lower()
+        && notificationId == "password-reset-" + data.email
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.studentId is string && data.studentId.size() > 0 && data.studentId.size() <= 30
+        && data.phone is string && data.phone.size() > 0 && data.phone.size() <= 30
+        && data.name == member.get("name", member.get("displayName", ""))
+        && data.studentId == member.get("studentId", "")
+        && data.phone == member.get("phone", "")
+        && data.status == "pending"
+        && data.requestedAt == request.time && data.createdAt == request.time;
+    }
+
     match /adminNotifications/{notificationId} {
+      allow create: if validPasswordResetRequest(notificationId);
+      allow update: if validPasswordResetRequest(notificationId)
+        && resource.data.type == "password_reset_requested"
+        && request.time >= resource.data.requestedAt + duration.value(10, "m");
+
       allow read, update, delete: if isAdmin();
       // Account deletion is completed by the signed-in client on Spark plans.
       // A user may create only one deterministic, tightly validated notice for

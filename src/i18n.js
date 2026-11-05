@@ -543,6 +543,12 @@ const EN_TRANSLATIONS = {
   "確認密碼": "Confirm Password",
   "至少 8 個字元": "At least 8 characters",
   "忘記密碼": "Forgot Password",
+  "送出審核申請": "Submit Review Request",
+  "確認是本人": "Confirm Identity",
+  "資料僅供幹部核對身分，請勿提供密碼。": "These details are for identity review. Do not provide your password.",
+  "請填寫註冊信箱、姓名、學號與電話。資料符合後會通知幹部，由幹部人工確認本人身分。": "Enter your registered email, name, student ID and phone. Matching requests will be sent to administrators for identity review.",
+  "四項資料需與註冊資料完全一致，送出後請等候幹部確認。": "All four fields must match your registration. Please wait for administrator review after submitting.",
+
   "寄送重設連結": "Send Reset Link",
   "寄送密碼重設連結": "Send Password Reset Link",
   "輸入註冊信箱，我們會寄送密碼重設連結，請依信中指示設定新密碼。": "Enter your registered email to receive a link to reset your password.",
